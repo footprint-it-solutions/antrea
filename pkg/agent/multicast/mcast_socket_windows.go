@@ -18,6 +18,7 @@
 package multicast
 
 import (
+	"fmt"
 	"net"
 	"syscall"
 
@@ -50,9 +51,12 @@ func (s *Socket) FlushMRoute() {
 }
 
 func CreateMulticastSocket() (*Socket, error) {
-	// On Windows, raw IGMP sockets for multicast routing (MRT_INIT) are not supported.
-	// We return a dummy socket as the routing logic is handled by OpenFlow.
-	return &Socket{}, nil
+	// We use a UDP socket to join multicast groups on the host.
+	fd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_DGRAM, syscall.IPPROTO_UDP)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create multicast socket: %v", err)
+	}
+	return &Socket{sockFD: fd}, nil
 }
 
 func (s *Socket) AllocateVIFs(interfaceNames []string, startVIF uint16) ([]uint16, error) {
@@ -65,14 +69,41 @@ func (s *Socket) AllocateVIFs(interfaceNames []string, startVIF uint16) ([]uint1
 
 func (s *Socket) MulticastInterfaceJoinMgroup(mgroup net.IP, ifaceIP net.IP, ifaceName string) error {
 	klog.V(2).InfoS("Joining multicast group", "group", mgroup, "interface", ifaceName, "ip", ifaceIP)
-	// Membership joining on Windows is typically done via UDP sockets bound to the interface.
-	// For the Antrea Windows Agent, the OpenFlow pipeline handles the actual forwarding.
-	// This function remains a placeholder for any future host-side IGMP participation requirements.
+	mreq := &syscall.IPMreq{}
+	mIP := mgroup.To4()
+	if mIP == nil {
+		return fmt.Errorf("multicast group %s is not a valid IPv4 address", mgroup)
+	}
+	copy(mreq.Multiaddr[:], mIP)
+	iIP := ifaceIP.To4()
+	if iIP == nil {
+		return fmt.Errorf("interface IP %s is not a valid IPv4 address", ifaceIP)
+	}
+	copy(mreq.Interface[:], iIP)
+	err := syscall.SetsockoptIPMreq(s.sockFD, syscall.IPPROTO_IP, syscall.IP_ADD_MEMBERSHIP, mreq)
+	if err != nil {
+		return fmt.Errorf("failed to join multicast group %s on %s: %v", mgroup, ifaceName, err)
+	}
 	return nil
 }
 
 func (s *Socket) MulticastInterfaceLeaveMgroup(mgroup net.IP, ifaceIP net.IP, ifaceName string) error {
 	klog.V(2).InfoS("Leaving multicast group", "group", mgroup, "interface", ifaceName)
+	mreq := &syscall.IPMreq{}
+	mIP := mgroup.To4()
+	if mIP == nil {
+		return fmt.Errorf("multicast group %s is not a valid IPv4 address", mgroup)
+	}
+	copy(mreq.Multiaddr[:], mIP)
+	iIP := ifaceIP.To4()
+	if iIP == nil {
+		return fmt.Errorf("interface IP %s is not a valid IPv4 address", ifaceIP)
+	}
+	copy(mreq.Interface[:], iIP)
+	err := syscall.SetsockoptIPMreq(s.sockFD, syscall.IPPROTO_IP, syscall.IP_DROP_MEMBERSHIP, mreq)
+	if err != nil {
+		return fmt.Errorf("failed to leave multicast group %s on %s: %v", mgroup, ifaceName, err)
+	}
 	return nil
 }
 
