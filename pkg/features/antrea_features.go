@@ -305,7 +305,6 @@ var (
 		// BGPPolicy feature is not validated on Windows yet. This can be removed
 		// in the future if it's fully tested on Windows.
 		BGPPolicy:         {},
-		Multicast:         {},
 		SecondaryNetwork:  {},
 		ServiceExternalIP: {},
 		IPsecCertAuth:     {},

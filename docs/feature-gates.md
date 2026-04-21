@@ -334,9 +334,9 @@ the external network and the cluster network. Refer to this [document](multicast
 
 #### Requirements for this Feature
 
-This feature is only supported:
+This feature is supported:
 
-* on Linux Nodes
+* on Linux and Windows Nodes
 * for IPv4 traffic
 * in `hybrid`, `noEncap` and `encap` traffic modes
 

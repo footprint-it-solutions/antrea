@@ -40,6 +40,7 @@ import (
 	binding "antrea.io/antrea/v2/pkg/ovs/openflow"
 	"antrea.io/antrea/v2/pkg/util/channel"
 	"antrea.io/antrea/v2/pkg/util/k8s"
+	"antrea.io/antrea/v2/pkg/util/runtime"
 )
 
 type eventType uint8
@@ -460,6 +461,8 @@ func (c *Controller) syncGroup(groupKey string) error {
 	memberPorts := make([]uint32, 0)
 	if c.flexibleIPAMEnabled {
 		memberPorts = append(memberPorts, c.nodeConfig.UplinkNetConfig.OFPort, c.nodeConfig.HostInterfaceOFPort)
+	} else if runtime.IsWindowsPlatform() {
+		memberPorts = append(memberPorts, c.nodeConfig.UplinkNetConfig.OFPort)
 	} else {
 		memberPorts = append(memberPorts, c.nodeConfig.GatewayConfig.OFPort)
 	}

@@ -1,7 +1,7 @@
-//go:build !linux && !windows
-// +build !linux,!windows
+//go:build windows
+// +build windows
 
-// Copyright 2021 Antrea Authors
+// Copyright 2026 Antrea Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,15 +19,22 @@ package multicast
 
 import (
 	"net"
+	"syscall"
+
+	"k8s.io/klog/v2"
 )
 
 const (
 	IGMPMsgNocache = 0
-	MaxVIFs        = 0
+	MaxVIFs        = 32
 	SizeofIgmpmsg  = 0
 )
 
-func (s *Socket) AddMrouteEntry(src net.IP, group net.IP, iif uint16, oifVIFs []uint16) error {
+type Socket struct {
+	sockFD syscall.Handle
+}
+
+func (s *Socket) AddMrouteEntry(src net.IP, group net.IP, iif uint16, oifs []uint16) error {
 	return nil
 }
 
@@ -43,25 +50,32 @@ func (s *Socket) FlushMRoute() {
 }
 
 func CreateMulticastSocket() (*Socket, error) {
-	return nil, nil
+	// On Windows, raw IGMP sockets for multicast routing (MRT_INIT) are not supported.
+	// We return a dummy socket as the routing logic is handled by OpenFlow.
+	return &Socket{}, nil
 }
 
 func (s *Socket) AllocateVIFs(interfaceNames []string, startVIF uint16) ([]uint16, error) {
-	return nil, nil
+	vifs := make([]uint16, len(interfaceNames))
+	for i := range interfaceNames {
+		vifs[i] = startVIF + uint16(i)
+	}
+	return vifs, nil
 }
 
 func (s *Socket) MulticastInterfaceJoinMgroup(mgroup net.IP, ifaceIP net.IP, ifaceName string) error {
+	klog.V(2).InfoS("Joining multicast group", "group", mgroup, "interface", ifaceName, "ip", ifaceIP)
+	// Membership joining on Windows is typically done via UDP sockets bound to the interface.
+	// For the Antrea Windows Agent, the OpenFlow pipeline handles the actual forwarding.
+	// This function remains a placeholder for any future host-side IGMP participation requirements.
 	return nil
 }
 
 func (s *Socket) MulticastInterfaceLeaveMgroup(mgroup net.IP, ifaceIP net.IP, ifaceName string) error {
+	klog.V(2).InfoS("Leaving multicast group", "group", mgroup, "interface", ifaceName)
 	return nil
 }
 
 func (s *Socket) GetFD() int {
-	return s.sockFD
-}
-
-type Socket struct {
-	sockFD int
+	return int(s.sockFD)
 }

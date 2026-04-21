@@ -20,6 +20,7 @@ package openflow
 import (
 	"net"
 
+	"antrea.io/antrea/v2/pkg/agent/types"
 	binding "antrea.io/antrea/v2/pkg/ovs/openflow"
 )
 
@@ -33,6 +34,15 @@ func (f *featurePodConnectivity) matchUplinkInPortInClassifierTable(flowBuilder 
 func (f *featurePodConnectivity) hostBridgeUplinkFlows() []binding.Flow {
 	cookieID := f.cookieAllocator.Request(f.category).Raw()
 	flows := f.hostBridgeLocalFlows()
+	flows = append(flows,
+		// This generates the flow to forward multicast packets from uplink port to bridge local port.
+		ClassifierTable.ofTable.BuildFlow(priorityNormal).
+			Cookie(cookieID).
+			MatchInPort(f.uplinkPort).
+			MatchProtocol(binding.ProtocolIP).
+			MatchDstIPNet(*types.McastCIDR).
+			Action().Output(f.hostIfacePort).
+			Done())
 	if f.networkConfig.IPv4Enabled {
 		flows = append(flows,
 			// This generates the flow to forward ARP packets from uplink port to bridge local port since uplink port is set
