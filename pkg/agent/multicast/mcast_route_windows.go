@@ -17,6 +17,20 @@
 
 package multicast
 
+func (c *MRouteClient) Initialize() error {
+	c.setMulticastInterfaces()
+	// On Windows, multicast routing is handled by OpenFlow, so we don't need to
+	// allocate VIFs for the gateway interface or external interfaces in the host
+	// kernel. We still initialize these fields to safe values to avoid any
+	// potential issues with other shared code.
+	c.internalInterfaceVIF = 0
+	c.externalInterfaceVIFs = make([]uint16, len(c.multicastInterfaceConfigs))
+	for i := range c.multicastInterfaceConfigs {
+		c.externalInterfaceVIFs[i] = uint16(i + 1)
+	}
+	return nil
+}
+
 func (c *MRouteClient) parseIGMPMsg(msg []byte) (*parsedIGMPMsg, error) {
 	// Multicast routing messages from raw sockets are not supported on Windows.
 	return nil, nil

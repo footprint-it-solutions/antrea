@@ -16,6 +16,10 @@
 // limitations under the License.
 package multicast
 
+func (c *MRouteClient) Initialize() error {
+	return nil
+}
+
 // nolint: unused
 func (c *MRouteClient) parseIGMPMsg(msg []byte) (*parsedIGMPMsg, error) {
 	return nil, nil

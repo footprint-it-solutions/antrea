@@ -1494,11 +1494,22 @@ func (c *client) SendIGMPQueryPacketOut(
 	outPort uint32,
 	igmp ofutil.Message) error {
 	// Generate a base IP PacketOutBuilder.
-	srcMAC := c.nodeConfig.GatewayConfig.MAC.String()
-	srcIP := c.nodeConfig.GatewayConfig.IPv4.String()
+	var srcMAC, srcIP string
+	var inPort uint32
+	if c.nodeConfig.GatewayConfig != nil {
+		srcMAC = c.nodeConfig.GatewayConfig.MAC.String()
+		srcIP = c.nodeConfig.GatewayConfig.IPv4.String()
+		inPort = c.nodeConfig.GatewayConfig.OFPort
+	} else if c.nodeConfig.UplinkNetConfig != nil {
+		srcMAC = c.nodeConfig.UplinkNetConfig.MAC.String()
+		srcIP = c.nodeConfig.NodeTransportIPv4Addr.IP.String()
+		inPort = c.nodeConfig.HostInterfaceOFPort
+	} else {
+		return fmt.Errorf("failed to generate IGMP query: no gateway or uplink configuration found")
+	}
 	dstMACStr := dstMAC.String()
 	dstIPStr := dstIP.String()
-	packetOutBuilder, err := setBasePacketOutBuilder(c.bridge.BuildPacketOut(), srcMAC, dstMACStr, srcIP, dstIPStr, c.nodeConfig.GatewayConfig.OFPort, outPort)
+	packetOutBuilder, err := setBasePacketOutBuilder(c.bridge.BuildPacketOut(), srcMAC, dstMACStr, srcIP, dstIPStr, inPort, outPort)
 	if err != nil {
 		return err
 	}
@@ -1547,7 +1558,14 @@ func (c *client) SendIGMPRemoteReportPacketOut(
 	dstMAC net.HardwareAddr,
 	dstIP net.IP,
 	igmp ofutil.Message) error {
-	srcMAC := c.nodeConfig.GatewayConfig.MAC.String()
+	var srcMAC string
+	if c.nodeConfig.GatewayConfig != nil {
+		srcMAC = c.nodeConfig.GatewayConfig.MAC.String()
+	} else if c.nodeConfig.UplinkNetConfig != nil {
+		srcMAC = c.nodeConfig.UplinkNetConfig.MAC.String()
+	} else {
+		return fmt.Errorf("failed to generate IGMP remote report: no gateway or uplink configuration found")
+	}
 	srcIP := c.nodeConfig.NodeTransportIPv4Addr.IP.String()
 	dstMACStr := dstMAC.String()
 	dstIPStr := dstIP.String()

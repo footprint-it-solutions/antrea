@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// nolint: unused // a lot of this code is unused for Windows since the multicast feature is not implemented yet
+// nolint: unused // some of this code is unused for Windows as multicast routing is handled by OpenFlow
 package multicast
 
 import (
@@ -47,27 +47,6 @@ func newRouteClient(nodeconfig *config.NodeConfig, groupCache cache.Indexer, mul
 		flexibleIPAMEnabled: flexibleIPAMEnabled,
 	}
 	return m
-}
-
-func (c *MRouteClient) Initialize() error {
-	c.setMulticastInterfaces()
-	// Allocate VIF for each interface in multicastInterfaceNames and gatewayInterface.
-	// The VIFs will be later used for multicast route configuration.
-	gatewayInterfaceVIF, err := c.socket.AllocateVIFs([]string{c.nodeConfig.GatewayConfig.Name}, 0)
-	if err != nil {
-		return err
-	}
-	c.internalInterfaceVIF = gatewayInterfaceVIF[0]
-	multicastInterfaceNames := make([]string, len(c.multicastInterfaceConfigs))
-	for i, config := range c.multicastInterfaceConfigs {
-		multicastInterfaceNames[i] = config.Name
-	}
-	externalInterfaceVIFs, err := c.socket.AllocateVIFs(multicastInterfaceNames, c.internalInterfaceVIF+1)
-	if err != nil {
-		return err
-	}
-	c.externalInterfaceVIFs = externalInterfaceVIFs
-	return nil
 }
 
 // MRouteClient configures static multicast route.
