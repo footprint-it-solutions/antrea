@@ -403,6 +403,7 @@ type client struct {
 	enableEgress               bool
 	enableEgressTrafficShaping bool
 	enableMulticast            bool
+	enableHostMulticast        bool
 	enableTrafficControl       bool
 	enableMulticluster         bool
 	enablePrometheusMetrics    bool
@@ -2789,6 +2790,9 @@ func (f *featureMulticast) igmpPktInFlows() []binding.Flow {
 	if f.encapEnabled {
 		sourceMarks = append(sourceMarks, FromTunnelRegMark)
 	}
+	if runtime.IsWindowsPlatform() && f.enableHostMulticast {
+		sourceMarks = append(sourceMarks, FromGatewayRegMark)
+	}
 	for _, m := range sourceMarks {
 		flows = append(flows,
 			// Set a custom category for the IGMP packets, and then send it to antrea-agent. Then antrea-agent can identify
@@ -2855,6 +2859,7 @@ func NewClient(bridgeName string,
 	enableDSR bool,
 	connectUplinkToBridge bool,
 	enableMulticast bool,
+	enableHostMulticast bool,
 	enableTrafficControl bool,
 	enableMulticluster bool,
 	groupIDAllocator GroupAllocator,
@@ -2874,6 +2879,7 @@ func NewClient(bridgeName string,
 		enableEgress:               enableEgress,
 		enableEgressTrafficShaping: enableEgressTrafficShaping,
 		enableMulticast:            enableMulticast,
+		enableHostMulticast:        enableHostMulticast,
 		enableTrafficControl:       enableTrafficControl,
 		enableMulticluster:         enableMulticluster,
 		enablePrometheusMetrics:    enablePrometheusMetrics,

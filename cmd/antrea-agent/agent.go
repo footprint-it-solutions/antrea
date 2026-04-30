@@ -190,6 +190,7 @@ func run(o *Options) error {
 		features.DefaultFeatureGate.Enabled(features.LoadBalancerModeDSR),
 		connectUplinkToBridge,
 		multicastEnabled,
+		o.config.Multicast.EnableHostMulticast,
 		features.DefaultFeatureGate.Enabled(features.TrafficControl),
 		enableMulticlusterGW,
 		groupIDAllocator,
@@ -920,7 +921,8 @@ func run(o *Options) error {
 			nodeInformer,
 			enableBridgingMode,
 			v4Enabled,
-			v6Enabled)
+			v6Enabled,
+			o.config.Multicast.EnableHostMulticast)
 		if err := mcastController.Initialize(); err != nil {
 			return err
 		}

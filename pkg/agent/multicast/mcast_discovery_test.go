@@ -36,6 +36,7 @@ import (
 	openflowtest "antrea.io/antrea/v2/pkg/agent/openflow/testing"
 	"antrea.io/antrea/v2/pkg/agent/types"
 	"antrea.io/antrea/v2/pkg/ovs/ovsconfig"
+	"antrea.io/antrea/v2/pkg/util/runtime"
 )
 
 var (
@@ -152,6 +153,89 @@ func TestParseIGMPPacket(t *testing.T) {
 				igmpMsg, err := parseIGMPPacket(ipPacket)
 				assert.Equal(t, tc.igmpMsg, igmpMsg)
 				assert.Equal(t, tc.err, err)
+			}
+		})
+	}
+}
+
+func TestParseSrcInterface(t *testing.T) {
+	controller := gomock.NewController(t)
+	mockIfaceStore := ifaceStoretest.NewMockInterfaceStore(controller)
+	snooper := &IGMPSnooper{ifaceStore: mockIfaceStore, enableHostMulticast: true}
+
+	gwIface := &interfacestore.InterfaceConfig{
+		Type:          interfacestore.GatewayInterface,
+		InterfaceName: "antrea-gw0",
+		OVSPortConfig: &interfacestore.OVSPortConfig{OFPort: 3},
+	}
+
+	tests := []struct {
+		name          string
+		isWindows     bool
+		ofPort        uint32
+		ifaceConfig   *interfacestore.InterfaceConfig
+		found         bool
+		expectedIface *interfacestore.InterfaceConfig
+		expectedErr   string
+	}{
+		{
+			name:          "Container interface",
+			isWindows:     false,
+			ofPort:        1,
+			ifaceConfig:   if1,
+			found:         true,
+			expectedIface: if1,
+		},
+		{
+			name:          "Gateway interface on Linux",
+			isWindows:     false,
+			ofPort:        3,
+			ifaceConfig:   gwIface,
+			found:         true,
+			expectedIface: nil,
+			expectedErr:   "unsupported interface type 1",
+		},
+		{
+			name:          "Gateway interface on Windows",
+			isWindows:     true,
+			ofPort:        3,
+			ifaceConfig:   gwIface,
+			found:         true,
+			expectedIface: gwIface,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.isWindows {
+				oldOS := runtime.WindowsOS
+				runtime.WindowsOS = "linux" // simulate Windows by making IsWindowsPlatform return true when GOOS is linux
+				defer func() { runtime.WindowsOS = oldOS }()
+			}
+
+			pktIn := &ofctrl.PacketIn{
+				PacketIn: &openflow15.PacketIn{
+					Match: openflow15.Match{
+						Fields: []openflow15.MatchField{
+							{
+								Class: openflow15.OXM_CLASS_OPENFLOW_BASIC,
+								Field: openflow15.OXM_FIELD_IN_PORT,
+								Value: &openflow15.InPortField{InPort: tt.ofPort},
+							},
+						},
+					},
+				},
+			}
+
+			mockIfaceStore.EXPECT().GetInterfaceByOFPort(tt.ofPort).Return(tt.ifaceConfig, tt.found)
+
+			iface, err := snooper.parseSrcInterface(pktIn)
+			if tt.expectedErr != "" {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.expectedErr)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expectedIface, iface)
 			}
 		})
 	}

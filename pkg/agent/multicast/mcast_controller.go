@@ -270,7 +270,8 @@ type Controller struct {
 	ipv4Enabled bool
 	// ipv6Enabled is the flag that if it is running on IPv6 cluster.
 	// TODO: remove this flag after IPv6 is supported in Multicast.
-	ipv6Enabled bool
+	ipv6Enabled         bool
+	enableHostMulticast bool
 }
 
 func NewMulticastController(ofClient openflow.Client,
@@ -287,9 +288,10 @@ func NewMulticastController(ofClient openflow.Client,
 	nodeInformer coreinformers.NodeInformer,
 	enableFlexibleIPAM bool,
 	ipv4Enabled bool,
-	ipv6Enabled bool) *Controller {
+	ipv6Enabled bool,
+	enableHostMulticast bool) *Controller {
 	eventCh := make(chan *mcastGroupEvent, workerCount)
-	groupSnooper := newSnooper(ofClient, ifaceStore, eventCh, igmpQueryInterval, igmpQueryVersions, validator, isEncap)
+	groupSnooper := newSnooper(ofClient, ifaceStore, eventCh, igmpQueryInterval, igmpQueryVersions, validator, isEncap, enableHostMulticast)
 	groupCache := cache.NewIndexer(getGroupEventKey, cache.Indexers{
 		podInterfaceIndex: podInterfaceIndexFunc,
 	})
@@ -318,6 +320,7 @@ func NewMulticastController(ofClient openflow.Client,
 		flexibleIPAMEnabled: enableFlexibleIPAM,
 		ipv4Enabled:         ipv4Enabled,
 		ipv6Enabled:         ipv6Enabled,
+		enableHostMulticast: enableHostMulticast,
 	}
 	if isEncap {
 		c.nodeGroupID = v4GroupAllocator.Allocate()
@@ -463,6 +466,9 @@ func (c *Controller) syncGroup(groupKey string) error {
 		memberPorts = append(memberPorts, c.nodeConfig.UplinkNetConfig.OFPort, c.nodeConfig.HostInterfaceOFPort)
 	} else if runtime.IsWindowsPlatform() {
 		memberPorts = append(memberPorts, c.nodeConfig.UplinkNetConfig.OFPort)
+		if c.enableHostMulticast {
+			memberPorts = append(memberPorts, c.nodeConfig.HostInterfaceOFPort)
+		}
 	} else {
 		memberPorts = append(memberPorts, c.nodeConfig.GatewayConfig.OFPort)
 	}
@@ -865,7 +871,7 @@ func (c *Controller) processNextNodeItem() bool {
 func memberExists(status *GroupMemberStatus, e *mcastGroupEvent) bool {
 	var exist bool
 	switch e.iface.Type {
-	case interfacestore.ContainerInterface:
+	case interfacestore.ContainerInterface, interfacestore.GatewayInterface:
 		_, exist = status.localMembers[e.iface.InterfaceName]
 	case interfacestore.TunnelInterface:
 		exist = status.remoteMembers.Has(e.srcNode.String())
@@ -874,7 +880,7 @@ func memberExists(status *GroupMemberStatus, e *mcastGroupEvent) bool {
 }
 
 func addGroupMember(status *GroupMemberStatus, e *mcastGroupEvent) *GroupMemberStatus {
-	if e.iface.Type == interfacestore.ContainerInterface {
+	if e.iface.Type == interfacestore.ContainerInterface || e.iface.Type == interfacestore.GatewayInterface {
 		status.localMembers[e.iface.InterfaceName] = e.time
 		klog.V(2).InfoS("Added local member from multicast group", "group", e.group.String(), "member", e.iface.InterfaceName)
 	} else {
@@ -885,7 +891,7 @@ func addGroupMember(status *GroupMemberStatus, e *mcastGroupEvent) *GroupMemberS
 }
 
 func deleteGroupMember(status *GroupMemberStatus, e *mcastGroupEvent) *GroupMemberStatus {
-	if e.iface.Type == interfacestore.ContainerInterface {
+	if e.iface.Type == interfacestore.ContainerInterface || e.iface.Type == interfacestore.GatewayInterface {
 		delete(status.localMembers, e.iface.InterfaceName)
 		klog.V(2).InfoS("Deleted local member from multicast group", "group", e.group.String(), "member", e.iface.InterfaceName)
 	} else {

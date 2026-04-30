@@ -27,6 +27,7 @@ import (
 	"antrea.io/antrea/v2/pkg/agent/config"
 	binding "antrea.io/antrea/v2/pkg/ovs/openflow"
 	openflowtest "antrea.io/antrea/v2/pkg/ovs/openflow/testing"
+	"antrea.io/antrea/v2/pkg/util/runtime"
 )
 
 func multicastInitFlows(isEncap bool) []string {
@@ -53,6 +54,23 @@ func multicastInitFlows(isEncap bool) []string {
 	}
 }
 
+func multicastInitFlowsWindows(enableHostMulticast bool) []string{
+	flows := []string{
+		"cookie=0x1050000000000, table=MulticastIngressPodMetric, priority=210,igmp actions=goto_table:MulticastOutput",
+		"cookie=0x1050000000000, table=MulticastRouting, priority=210,igmp,reg0=0x3/0xf actions=controller(id=32776,reason=no_match,userdata=03,max_len=65535)",
+		"cookie=0x1050000000000, table=MulticastRouting, priority=190,ip actions=output:32769",
+		"cookie=0x1050000000000, table=MulticastEgressPodMetric, priority=210,igmp actions=goto_table:MulticastRouting",
+		"cookie=0x1050000000000, table=MulticastEgressRule, priority=64990,igmp,reg0=0x3/0xf actions=goto_table:MulticastRouting",
+		"cookie=0x1050000000000, table=MulticastOutput, priority=200,reg0=0x200000/0x600000 actions=output:NXM_NX_REG1[]",
+	}
+	if enableHostMulticast {
+		flows = append(flows,
+			"cookie=0x1050000000000, table=MulticastRouting, priority=210,igmp,reg0=0x2/0xf actions=controller(id=32776,reason=no_match,userdata=03,max_len=65535)",
+		)
+	}
+	return flows
+}
+
 func Test_featureMulticast_initFlows(t *testing.T) {
 	testCases := []struct {
 		name             string
@@ -61,6 +79,7 @@ func Test_featureMulticast_initFlows(t *testing.T) {
 		trafficEncapMode config.TrafficEncapModeType
 		clientOptions    []clientOptionsFn
 		expectedFlows    []string
+		isWindows        bool
 	}{
 		{
 			name:             "IPv4,Encap",
@@ -76,9 +95,30 @@ func Test_featureMulticast_initFlows(t *testing.T) {
 			clientOptions:    []clientOptionsFn{enableMulticast},
 			expectedFlows:    multicastInitFlows(false),
 		},
+		{
+			name:             "Windows,EnableHostMulticast",
+			enableIPv4:       true,
+			trafficEncapMode: config.TrafficEncapModeNoEncap,
+			clientOptions:    []clientOptionsFn{enableHostMulticast},
+			expectedFlows:    multicastInitFlowsWindows(true),
+			isWindows:        true,
+		},
+		{
+			name:             "Windows,DisableHostMulticast",
+			enableIPv4:       true,
+			trafficEncapMode: config.TrafficEncapModeNoEncap,
+			clientOptions:    []clientOptionsFn{enableMulticast},
+			expectedFlows:    multicastInitFlowsWindows(false),
+			isWindows:        true,
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.isWindows {
+				oldOS := runtime.WindowsOS
+				runtime.WindowsOS = "linux"
+				defer func() { runtime.WindowsOS = oldOS }()
+			}
 			fc := newFakeClient(nil, tc.enableIPv4, tc.enableIPv6, config.K8sNode, tc.trafficEncapMode, tc.clientOptions...)
 			defer resetPipelines()
 

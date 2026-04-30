@@ -90,6 +90,7 @@ type clientOptions struct {
 	enableDSR                  bool
 	connectUplinkToBridge      bool
 	enableMulticast            bool
+	enableHostMulticast        bool
 	enableTrafficControl       bool
 	enableMulticluster         bool
 	enableL7NetworkPolicy      bool
@@ -149,6 +150,11 @@ func enableConnectUplinkToBridge(o *clientOptions) {
 
 func enableMulticast(o *clientOptions) {
 	o.enableMulticast = true
+}
+
+func enableHostMulticast(o *clientOptions) {
+	o.enableMulticast = true
+	o.enableHostMulticast = true
 }
 
 func disableAntreaPolicy(o *clientOptions) {
@@ -413,6 +419,7 @@ func newFakeClientWithBridge(
 		o.enableDSR,
 		o.connectUplinkToBridge,
 		o.enableMulticast,
+		o.enableHostMulticast,
 		o.enableTrafficControl,
 		o.enableMulticluster,
 		NewGroupAllocator(),
@@ -2060,7 +2067,7 @@ func Test_client_setBasePacketOutBuilder(t *testing.T) {
 }
 
 func prepareSetBasePacketOutBuilder(ctrl *gomock.Controller, success bool) *client {
-	ofClient := NewClient(bridgeName, bridgeMgmtAddr, nodeiptest.NewFakeNodeIPChecker(), true, true, false, false, false, false, false, false, false, false, false, false, nil, false, defaultPacketInRate)
+	ofClient := NewClient(bridgeName, bridgeMgmtAddr, nodeiptest.NewFakeNodeIPChecker(), true, true, false, false, false, false, false, false, false, false, false, false, false, nil, false, defaultPacketInRate)
 	m := ovsoftest.NewMockBridge(ctrl)
 	ofClient.bridge = m
 	bridge := binding.OFBridge{}

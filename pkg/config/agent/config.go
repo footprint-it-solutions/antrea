@@ -348,6 +348,11 @@ type MulticastConfig struct {
 	// The versions of IGMP queries antrea-agent sends to Pods.
 	// Defaults to [1, 2, 3].
 	IGMPQueryVersions []int `yaml:"igmpQueryVersions"`
+	// EnableHostMulticast enables the host-level multicast participation on Windows Nodes.
+	// When enabled, the Antrea Agent will recognize host-originating IGMP join requests and
+	// include the host interface in multicast member ports.
+	// Defaults to false.
+	EnableHostMulticast bool `yaml:"enableHostMulticast,omitempty"`
 }
 
 type EgressConfig struct {

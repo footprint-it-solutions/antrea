@@ -35,6 +35,7 @@ type featureMulticast struct {
 	tunnelPort          uint32
 	uplinkPort          uint32
 	hostOFPort          uint32
+	enableHostMulticast bool
 
 	cachedFlows        *flowCategoryCache
 	groupCache         sync.Map
@@ -58,6 +59,7 @@ func newFeatureMulticast(
 	uplinkPort uint32,
 	hostOFPort uint32,
 	flexibleIPAMEnabled bool,
+	enableHostMulticast bool,
 ) *featureMulticast {
 	return &featureMulticast{
 		cookieAllocator:     cookieAllocator,
@@ -73,6 +75,7 @@ func newFeatureMulticast(
 		uplinkPort:          uplinkPort,
 		hostOFPort:          hostOFPort,
 		flexibleIPAMEnabled: flexibleIPAMEnabled,
+		enableHostMulticast: enableHostMulticast,
 	}
 }
 
