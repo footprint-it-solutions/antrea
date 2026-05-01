@@ -17,7 +17,40 @@
 
 package multicast
 
+import (
+	"context"
+	"time"
+
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/klog/v2"
+
+	"antrea.io/antrea/v2/pkg/agent/util"
+)
+
 func (c *MRouteClient) Initialize() error {
+	// On Windows, the network transformation (HNS/OVS) can take some time to settle.
+	// We wait for the multicast interfaces (especially antrea-gw0) to be ready.
+	if len(c.multicastInterfaces) > 0 {
+		klog.InfoS("Waiting for multicast interfaces to settle", "interfaces", c.multicastInterfaces)
+		err := wait.PollUntilContextTimeout(context.TODO(), 2*time.Second, 20*time.Second, true, func(ctx context.Context) (bool, error) {
+			for _, ifaceName := range c.multicastInterfaces {
+				ipv4Addr, _, _, err := util.GetIPNetDeviceByName(ifaceName)
+				if err != nil || ipv4Addr == nil {
+					klog.V(2).InfoS("Multicast interface not ready yet", "interface", ifaceName, "err", err)
+					return false, nil
+				}
+			}
+			return true, nil
+		})
+		if err != nil {
+
+			klog.ErrorS(err, "Multicast interfaces did not settle in time", "interfaces", c.multicastInterfaces)
+			// We proceed anyway to avoid blocking agent startup, but errors will likely occur during setMulticastInterfaces.
+		} else {
+			klog.InfoS("Multicast interfaces settled")
+		}
+	}
+
 	c.setMulticastInterfaces()
 	// On Windows, multicast routing is handled by OpenFlow, so we don't need to
 	// allocate VIFs for the gateway interface or external interfaces in the host

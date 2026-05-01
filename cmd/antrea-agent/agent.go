@@ -87,6 +87,7 @@ import (
 	"antrea.io/antrea/v2/pkg/util/k8s"
 	"antrea.io/antrea/v2/pkg/util/lazy"
 	"antrea.io/antrea/v2/pkg/util/objectstore"
+	"antrea.io/antrea/v2/pkg/util/runtime"
 	utilwait "antrea.io/antrea/v2/pkg/util/wait"
 	"antrea.io/antrea/v2/pkg/version"
 	k8sproxy "antrea.io/antrea/v2/third_party/proxy"
@@ -906,13 +907,17 @@ func run(o *Options) error {
 		if antreaPolicyEnabled {
 			validator = networkPolicyController
 		}
+		mcastInterfaces := sets.New[string](o.config.Multicast.MulticastInterfaces...)
+		if runtime.IsWindowsPlatform() && features.DefaultFeatureGate.Enabled(features.MulticastWindowsHost) {
+			mcastInterfaces.Insert(o.config.HostGateway)
+		}
 		mcastController = multicast.NewMulticastController(
 			ofClient,
 			groupIDAllocator,
 			nodeConfig,
 			ifaceStore,
 			multicastSocket,
-			sets.New[string](append(o.config.Multicast.MulticastInterfaces, nodeConfig.NodeTransportInterfaceName)...),
+			mcastInterfaces,
 			podUpdateChannel,
 			o.igmpQueryInterval,
 			o.igmpQueryVersions,
