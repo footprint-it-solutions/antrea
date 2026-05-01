@@ -20,7 +20,6 @@ package openflow
 import (
 	"net"
 
-	"antrea.io/antrea/v2/pkg/agent/types"
 	binding "antrea.io/antrea/v2/pkg/ovs/openflow"
 )
 
