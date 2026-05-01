@@ -99,7 +99,12 @@ const (
 	// Expose Pod ports through NodePort
 	NodePortLocal featuregate.Feature = "NodePortLocal"
 
-	// alpha: v1.0
+	// alpha: v2.7
+	// Enable the host-level multicast participation on Windows Nodes.
+	MulticastWindowsHost featuregate.Feature = "MulticastWindowsHost"
+
+	// alpha: v1.8
+
 	// beta: v1.6
 	// Enable controlling SNAT IPs of Pod egress traffic.
 	Egress featuregate.Feature = "Egress"
@@ -220,6 +225,7 @@ var (
 		NodePortLocal:                 {Default: true, PreRelease: featuregate.GA},
 		NodeIPAM:                      {Default: true, PreRelease: featuregate.Beta},
 		Multicast:                     {Default: true, PreRelease: featuregate.Beta},
+		MulticastWindowsHost:          {Default: false, PreRelease: featuregate.Alpha},
 		Multicluster:                  {Default: false, PreRelease: featuregate.Alpha},
 		SecondaryNetwork:              {Default: false, PreRelease: featuregate.Alpha},
 		ServiceExternalIP:             {Default: true, PreRelease: featuregate.Beta},
@@ -252,6 +258,7 @@ var (
 		L7NetworkPolicy,
 		LoadBalancerModeDSR,
 		Multicast,
+		MulticastWindowsHost,
 		Multicluster,
 		NetworkPolicyStats,
 		NFTablesHostNetworkMode,
