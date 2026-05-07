@@ -43,9 +43,9 @@ func (c *MRouteClient) Initialize() error {
 			return true, nil
 		})
 		if err != nil {
-
 			klog.ErrorS(err, "Multicast interfaces did not settle in time", "interfaces", c.multicastInterfaces)
-			// We proceed anyway to avoid blocking agent startup, but errors will likely occur during setMulticastInterfaces.
+			// On Windows, we proceed even if interfaces aren't ready to avoid blocking agent startup.
+			// The interfaces might be undergoing recreation by boot scripts.
 		} else {
 			klog.InfoS("Multicast interfaces settled")
 		}

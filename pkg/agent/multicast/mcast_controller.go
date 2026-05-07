@@ -467,7 +467,7 @@ func (c *Controller) syncGroup(groupKey string) error {
 	} else if runtime.IsWindowsPlatform() {
 		memberPorts = append(memberPorts, c.nodeConfig.UplinkNetConfig.OFPort)
 		if c.enableHostMulticast {
-			memberPorts = append(memberPorts, c.nodeConfig.HostInterfaceOFPort)
+			memberPorts = append(memberPorts, c.nodeConfig.GatewayConfig.OFPort)
 		}
 	} else {
 		memberPorts = append(memberPorts, c.nodeConfig.GatewayConfig.OFPort)

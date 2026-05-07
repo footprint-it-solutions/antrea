@@ -1403,8 +1403,8 @@ func TestSyncGroupHostMulticast(t *testing.T) {
 			name:                "Windows with host multicast enabled",
 			isWindows:           true,
 			enableHostMulticast: true,
-			// uplinkPort(32770) + hostIfacePort(32771) + if1(1)
-			expectedPorts: []uint32{32770, 32771, 1},
+			// uplinkPort(32770) + gatewayPort(32769) + if1(1)
+			expectedPorts: []uint32{32770, 32769, 1},
 		},
 		{
 			name:                "Windows with host multicast disabled",

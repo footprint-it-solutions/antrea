@@ -27,6 +27,7 @@ import (
 
 	"antrea.io/antrea/v2/pkg/agent/config"
 	"antrea.io/antrea/v2/pkg/agent/util"
+	"antrea.io/antrea/v2/pkg/util/runtime"
 )
 
 const (
@@ -71,6 +72,9 @@ type MRouteClient struct {
 func (c *MRouteClient) multicastInterfacesJoinMgroup(mgroup net.IP) error {
 	groupIP := mgroup.To4()
 	for _, config := range c.multicastInterfaceConfigs {
+		if runtime.IsWindowsPlatform() && c.nodeConfig.GatewayConfig != nil && config.Name == c.nodeConfig.GatewayConfig.Name {
+			continue
+		}
 		addrIP := config.IPv4Addr.IP.To4()
 		err := c.socket.MulticastInterfaceJoinMgroup(groupIP, addrIP, config.Name)
 		if err != nil && !strings.Contains(err.Error(), "address already in use") {
@@ -83,6 +87,9 @@ func (c *MRouteClient) multicastInterfacesJoinMgroup(mgroup net.IP) error {
 func (c *MRouteClient) multicastInterfacesLeaveMgroup(mgroup net.IP) error {
 	groupIP := mgroup.To4()
 	for _, config := range c.multicastInterfaceConfigs {
+		if runtime.IsWindowsPlatform() && c.nodeConfig.GatewayConfig != nil && config.Name == c.nodeConfig.GatewayConfig.Name {
+			continue
+		}
 		addrIP := config.IPv4Addr.IP.To4()
 		err := c.socket.MulticastInterfaceLeaveMgroup(groupIP, addrIP, config.Name)
 		if err != nil {

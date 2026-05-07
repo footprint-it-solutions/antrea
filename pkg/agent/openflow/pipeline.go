@@ -2835,6 +2835,10 @@ func (f *featureMulticast) externalMulticastReceiverFlow() binding.Flow {
 	outputPorts := []uint32{f.gatewayPort}
 	if f.flexibleIPAMEnabled {
 		outputPorts = []uint32{f.hostOFPort, f.uplinkPort}
+	} else if runtime.IsWindowsPlatform() {
+		// On Windows, always include the uplink port to ensure host-originated
+		// multicast (e.g., discovery) reaches the external network.
+		outputPorts = append(outputPorts, f.uplinkPort)
 	}
 	flow := MulticastRoutingTable.ofTable.BuildFlow(priorityLow).
 		Cookie(f.cookieAllocator.Request(f.category).Raw()).
