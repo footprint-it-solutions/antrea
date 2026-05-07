@@ -69,9 +69,14 @@ CNI_BINARIES_VERSION=$(head -n 1 deps/cni-binaries-version)
 GO_VERSION=$(head -n 1 deps/go-version)
 OVS_VERSION=$(head -n 1 deps/ovs-version-windows)
 
-registry="antrea"
-image_name="antrea-windows"
+registry=${DOCKER_REGISTRY:-antrea}
+image_name=${ANTREA_WINDOWS_IMAGE_NAME:-antrea-windows}
 image="${registry}/${image_name}"
+
+if [[ ${ANTREA_WINDOWS_IMAGE} != "" ]]; then
+    image="${ANTREA_WINDOWS_IMAGE}"
+fi
+
 BUILD_ARGS="--build-arg GO_VERSION=${GO_VERSION} --build-arg OVS_VERSION=${OVS_VERSION} --build-arg CNI_BINARIES_VERSION=${CNI_BINARIES_VERSION}"
 if [[ ${DOCKER_REGISTRY} != "" ]]; then
     BUILD_ARGS+=" --build-arg DOCKER_REGISTRY=${DOCKER_REGISTRY}"

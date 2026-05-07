@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// nolint: unused // a lot of this code is unused for Windows since the multicast feature is not implemented yet
+// nolint: unused // some of this code is unused for Windows as multicast routing is handled by OpenFlow
 package multicast
 
 import (
@@ -27,6 +27,7 @@ import (
 
 	"antrea.io/antrea/v2/pkg/agent/config"
 	"antrea.io/antrea/v2/pkg/agent/util"
+	"antrea.io/antrea/v2/pkg/util/runtime"
 )
 
 const (
@@ -47,27 +48,6 @@ func newRouteClient(nodeconfig *config.NodeConfig, groupCache cache.Indexer, mul
 		flexibleIPAMEnabled: flexibleIPAMEnabled,
 	}
 	return m
-}
-
-func (c *MRouteClient) Initialize() error {
-	c.setMulticastInterfaces()
-	// Allocate VIF for each interface in multicastInterfaceNames and gatewayInterface.
-	// The VIFs will be later used for multicast route configuration.
-	gatewayInterfaceVIF, err := c.socket.AllocateVIFs([]string{c.nodeConfig.GatewayConfig.Name}, 0)
-	if err != nil {
-		return err
-	}
-	c.internalInterfaceVIF = gatewayInterfaceVIF[0]
-	multicastInterfaceNames := make([]string, len(c.multicastInterfaceConfigs))
-	for i, config := range c.multicastInterfaceConfigs {
-		multicastInterfaceNames[i] = config.Name
-	}
-	externalInterfaceVIFs, err := c.socket.AllocateVIFs(multicastInterfaceNames, c.internalInterfaceVIF+1)
-	if err != nil {
-		return err
-	}
-	c.externalInterfaceVIFs = externalInterfaceVIFs
-	return nil
 }
 
 // MRouteClient configures static multicast route.
@@ -92,6 +72,9 @@ type MRouteClient struct {
 func (c *MRouteClient) multicastInterfacesJoinMgroup(mgroup net.IP) error {
 	groupIP := mgroup.To4()
 	for _, config := range c.multicastInterfaceConfigs {
+		if runtime.IsWindowsPlatform() && c.nodeConfig.GatewayConfig != nil && config.Name == c.nodeConfig.GatewayConfig.Name {
+			continue
+		}
 		addrIP := config.IPv4Addr.IP.To4()
 		err := c.socket.MulticastInterfaceJoinMgroup(groupIP, addrIP, config.Name)
 		if err != nil && !strings.Contains(err.Error(), "address already in use") {
@@ -104,6 +87,9 @@ func (c *MRouteClient) multicastInterfacesJoinMgroup(mgroup net.IP) error {
 func (c *MRouteClient) multicastInterfacesLeaveMgroup(mgroup net.IP) error {
 	groupIP := mgroup.To4()
 	for _, config := range c.multicastInterfaceConfigs {
+		if runtime.IsWindowsPlatform() && c.nodeConfig.GatewayConfig != nil && config.Name == c.nodeConfig.GatewayConfig.Name {
+			continue
+		}
 		addrIP := config.IPv4Addr.IP.To4()
 		err := c.socket.MulticastInterfaceLeaveMgroup(groupIP, addrIP, config.Name)
 		if err != nil {

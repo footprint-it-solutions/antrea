@@ -33,6 +33,27 @@ const (
 	mRouteTimeout = time.Minute * 10
 )
 
+func (c *MRouteClient) Initialize() error {
+	c.setMulticastInterfaces()
+	// Allocate VIF for each interface in multicastInterfaceNames and gatewayInterface.
+	// The VIFs will be later used for multicast route configuration.
+	gatewayInterfaceVIF, err := c.socket.AllocateVIFs([]string{c.nodeConfig.GatewayConfig.Name}, 0)
+	if err != nil {
+		return err
+	}
+	c.internalInterfaceVIF = gatewayInterfaceVIF[0]
+	multicastInterfaceNames := make([]string, len(c.multicastInterfaceConfigs))
+	for i, config := range c.multicastInterfaceConfigs {
+		multicastInterfaceNames[i] = config.Name
+	}
+	externalInterfaceVIFs, err := c.socket.AllocateVIFs(multicastInterfaceNames, c.internalInterfaceVIF+1)
+	if err != nil {
+		return err
+	}
+	c.externalInterfaceVIFs = externalInterfaceVIFs
+	return nil
+}
+
 // parseIGMPMsg parses the kernel version into parsedIGMPMsg. Note we need to consider the change
 // after linux 5.9 in the igmpmsg struct when parsing vif. Please check
 // https://github.com/torvalds/linux/commit/c8715a8e9f38906e73d6d78764216742db13ba0e.

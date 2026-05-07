@@ -403,6 +403,7 @@ type client struct {
 	enableEgress               bool
 	enableEgressTrafficShaping bool
 	enableMulticast            bool
+	enableHostMulticast        bool
 	enableTrafficControl       bool
 	enableMulticluster         bool
 	enablePrometheusMetrics    bool
@@ -2789,6 +2790,9 @@ func (f *featureMulticast) igmpPktInFlows() []binding.Flow {
 	if f.encapEnabled {
 		sourceMarks = append(sourceMarks, FromTunnelRegMark)
 	}
+	if runtime.IsWindowsPlatform() && f.enableHostMulticast {
+		sourceMarks = append(sourceMarks, FromGatewayRegMark)
+	}
 	for _, m := range sourceMarks {
 		flows = append(flows,
 			// Set a custom category for the IGMP packets, and then send it to antrea-agent. Then antrea-agent can identify
@@ -2811,6 +2815,40 @@ func (f *featureMulticast) igmpPktInFlows() []binding.Flow {
 // flow, and the packet is not sent back to Antrea gateway because OVS datapath will drop it when it finds the output
 // port is the same as the input port.
 func (f *featureMulticast) localMulticastForwardFlows(multicastIP net.IP, groupID binding.GroupIDType) []binding.Flow {
+	if runtime.IsWindowsPlatform() {
+		// On Windows, use source-aware rules to avoid hairpining, which causes OVS driver crashes.
+		// Packets from Gateway -> Uplink + Group (Pods)
+		// Packets from Uplink -> Gateway + Group (Pods)
+		// Note: Group on Windows now only contains Pod ports.
+		cookie := f.cookieAllocator.Request(f.category).Raw()
+		return []binding.Flow{
+			MulticastRoutingTable.ofTable.BuildFlow(priorityNormal + 10).
+				Cookie(cookie).
+				MatchProtocol(binding.ProtocolIP).
+				MatchDstIP(multicastIP).
+				MatchInPort(f.gatewayPort).
+				Action().Output(f.uplinkPort).
+				Action().Group(groupID).
+				Done(),
+			MulticastRoutingTable.ofTable.BuildFlow(priorityNormal + 10).
+				Cookie(cookie).
+				MatchProtocol(binding.ProtocolIP).
+				MatchDstIP(multicastIP).
+				MatchInPort(f.uplinkPort).
+				Action().Output(f.gatewayPort).
+				Action().Group(groupID).
+				Done(),
+			MulticastRoutingTable.ofTable.BuildFlow(priorityNormal).
+				Cookie(cookie).
+				MatchProtocol(binding.ProtocolIP).
+				MatchDstIP(multicastIP).
+				Action().Output(f.gatewayPort).
+				Action().Output(f.uplinkPort).
+				Action().Group(groupID).
+				Done(),
+		}
+	}
+
 	return []binding.Flow{
 		MulticastRoutingTable.ofTable.BuildFlow(priorityNormal).
 			Cookie(f.cookieAllocator.Request(f.category).Raw()).
@@ -2827,7 +2865,31 @@ func (f *featureMulticast) localMulticastForwardFlows(multicastIP net.IP, groupI
 // function "localMulticastForwardFlows" after local Pods report the IGMP membership.
 // Because there are ingress tables between MulticastRoutingTable and MulticastOutputTable, while currently ingress rules only
 // support IGMP query, it is not necessary to goto the ingress tables for other multicast traffic.
-func (f *featureMulticast) externalMulticastReceiverFlow() binding.Flow {
+func (f *featureMulticast) externalMulticastReceiverFlows() []binding.Flow {
+	if runtime.IsWindowsPlatform() {
+		// On Windows, use source-aware rules to prevent hairpining, which can cause driver crashes.
+		return []binding.Flow{
+			MulticastRoutingTable.ofTable.BuildFlow(priorityLow).
+				Cookie(f.cookieAllocator.Request(f.category).Raw()).
+				MatchInPort(f.gatewayPort).
+				MatchProtocol(binding.ProtocolIP).
+				Action().Output(f.uplinkPort).
+				Done(),
+			MulticastRoutingTable.ofTable.BuildFlow(priorityLow).
+				Cookie(f.cookieAllocator.Request(f.category).Raw()).
+				MatchInPort(f.uplinkPort).
+				MatchProtocol(binding.ProtocolIP).
+				Action().Output(f.gatewayPort).
+				Done(),
+			MulticastRoutingTable.ofTable.BuildFlow(priorityLow).
+				Cookie(f.cookieAllocator.Request(f.category).Raw()).
+				MatchInPort(f.tunnelPort).
+				MatchProtocol(binding.ProtocolIP).
+				Action().Output(f.gatewayPort).
+				Done(),
+		}
+	}
+
 	outputPorts := []uint32{f.gatewayPort}
 	if f.flexibleIPAMEnabled {
 		outputPorts = []uint32{f.hostOFPort, f.uplinkPort}
@@ -2838,7 +2900,7 @@ func (f *featureMulticast) externalMulticastReceiverFlow() binding.Flow {
 	for _, outputPort := range outputPorts {
 		flow = flow.Action().Output(outputPort)
 	}
-	return flow.Done()
+	return []binding.Flow{flow.Done()}
 }
 
 // NewClient is the constructor of the Client interface.
@@ -2855,6 +2917,7 @@ func NewClient(bridgeName string,
 	enableDSR bool,
 	connectUplinkToBridge bool,
 	enableMulticast bool,
+	enableHostMulticast bool,
 	enableTrafficControl bool,
 	enableMulticluster bool,
 	groupIDAllocator GroupAllocator,
@@ -2874,6 +2937,7 @@ func NewClient(bridgeName string,
 		enableEgress:               enableEgress,
 		enableEgressTrafficShaping: enableEgressTrafficShaping,
 		enableMulticast:            enableMulticast,
+		enableHostMulticast:        enableHostMulticast,
 		enableTrafficControl:       enableTrafficControl,
 		enableMulticluster:         enableMulticluster,
 		enablePrometheusMetrics:    enablePrometheusMetrics,

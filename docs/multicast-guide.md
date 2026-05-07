@@ -150,14 +150,20 @@ has joined multicast group `239.255.12.42`.
 
 ## Limitations
 
-This feature is currently supported only for IPv4 Linux clusters. Support for
-Windows and IPv6 will be added in the future.
+This feature is currently supported for IPv4 Linux and Windows clusters. Support for
+IPv6 will be added in the future.
 
 ### Encap mode
 
 The configuration option `multicastInterfaces` is not supported with encap mode.
 Multicast packets in encap mode are SNATed and forwarded to the transport
 interface only.
+
+### Windows Nodes
+
+On Windows Nodes, multicast routing is handled entirely by the OpenFlow pipeline.
+Command `ip mroute` is not available on Windows, and multicast statistics should
+be verified using `antctl get podmulticaststats`.
 
 ### Maximum number of receiver groups on one Node
 

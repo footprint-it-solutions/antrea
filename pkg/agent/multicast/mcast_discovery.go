@@ -33,6 +33,7 @@ import (
 	"antrea.io/antrea/v2/pkg/apis/controlplane/v1beta2"
 	"antrea.io/antrea/v2/pkg/apis/crd/v1beta1"
 	binding "antrea.io/antrea/v2/pkg/ovs/openflow"
+	"antrea.io/antrea/v2/pkg/util/runtime"
 )
 
 const (
@@ -66,6 +67,7 @@ type IGMPSnooper struct {
 	igmpReportACNPStats      map[apitypes.UID]map[string]*types.RuleMetric
 	igmpReportACNPStatsMutex sync.Mutex
 	encapEnabled             bool
+	enableHostMulticast      bool
 }
 
 func (s *IGMPSnooper) parseSrcInterface(pktIn *ofctrl.PacketIn) (*interfacestore.InterfaceConfig, error) {
@@ -77,9 +79,15 @@ func (s *IGMPSnooper) parseSrcInterface(pktIn *ofctrl.PacketIn) (*interfacestore
 	ofPort := ofPortField.GetValue().(uint32)
 	ifaceConfig, found := s.ifaceStore.GetInterfaceByOFPort(ofPort)
 	if !found {
-		return nil, errors.New("target Pod not found")
+		return nil, errors.New("target interface not found")
 	}
-	return ifaceConfig, nil
+	if ifaceConfig.Type == interfacestore.ContainerInterface || ifaceConfig.Type == interfacestore.TunnelInterface {
+		return ifaceConfig, nil
+	}
+	if runtime.IsWindowsPlatform() && s.enableHostMulticast && ifaceConfig.Type == interfacestore.GatewayInterface {
+		return ifaceConfig, nil
+	}
+	return nil, fmt.Errorf("unsupported interface type %s", ifaceConfig.Type)
 }
 
 func (s *IGMPSnooper) queryIGMP(group net.IP) error {
@@ -108,6 +116,9 @@ func (s *IGMPSnooper) validate(event *mcastGroupEvent, igmpType uint8, packetInD
 	// MulticastValidator only validates the IGMP report message sent from Pods. The report message received from tunnel
 	// port is sent from Antrea Agent on a different Node, and returns true directly.
 	if event.iface.Type == interfacestore.TunnelInterface {
+		return true, nil
+	}
+	if runtime.IsWindowsPlatform() && s.enableHostMulticast && event.iface.Type == interfacestore.GatewayInterface {
 		return true, nil
 	}
 	if event.iface.Type != interfacestore.ContainerInterface {
@@ -375,8 +386,8 @@ func parseIGMPPacket(ipPacket *protocol.IPv4) (protocol.IGMPMessage, error) {
 	}
 }
 
-func newSnooper(ofClient openflow.Client, ifaceStore interfacestore.InterfaceStore, eventCh chan *mcastGroupEvent, queryInterval time.Duration, igmpQueryVersions []uint8, multicastValidator types.McastNetworkPolicyController, encapEnabled bool) *IGMPSnooper {
-	snooper := &IGMPSnooper{ofClient: ofClient, ifaceStore: ifaceStore, eventCh: eventCh, validator: multicastValidator, queryInterval: queryInterval, queryVersions: igmpQueryVersions, encapEnabled: encapEnabled}
+func newSnooper(ofClient openflow.Client, ifaceStore interfacestore.InterfaceStore, eventCh chan *mcastGroupEvent, queryInterval time.Duration, igmpQueryVersions []uint8, multicastValidator types.McastNetworkPolicyController, encapEnabled bool, enableHostMulticast bool) *IGMPSnooper {
+	snooper := &IGMPSnooper{ofClient: ofClient, ifaceStore: ifaceStore, eventCh: eventCh, validator: multicastValidator, queryInterval: queryInterval, queryVersions: igmpQueryVersions, encapEnabled: encapEnabled, enableHostMulticast: enableHostMulticast}
 	snooper.igmpReportACNPStats = make(map[apitypes.UID]map[string]*types.RuleMetric)
 	snooper.igmpReportANNPStats = make(map[apitypes.UID]map[string]*types.RuleMetric)
 	ofClient.RegisterPacketInHandler(uint8(openflow.PacketInCategoryIGMP), snooper)

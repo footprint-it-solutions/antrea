@@ -46,7 +46,6 @@ func skipIfMulticastDisabled(tb testing.TB, data *TestData) {
 }
 
 func TestMulticast(t *testing.T) {
-	skipIfHasWindowsNodes(t)
 	skipIfNotIPv4Cluster(t)
 
 	data, err := setupTest(t)
@@ -644,18 +643,21 @@ func runTestMulticastBetweenPods(t *testing.T, data *TestData, mc multicastTestc
 	senderReady := false
 	if err := wait.PollUntilContextTimeout(context.Background(), 3*time.Second, defaultTimeout, false, func(ctx context.Context) (bool, error) {
 		if checkSenderRoute && !senderReady {
-			// Sender pods should add an outbound multicast route except when running as HostNetwork.
-			mRoutesResult, err := getMroutes(nodeName(mc.senderConfig.nodeIdx), gatewayInterface, mc.group.String(), strings.Join(nodeMulticastInterfaces[mc.senderConfig.nodeIdx], " "))
-			if err != nil {
-				return false, err
-			}
-			if !mc.senderConfig.isHostNetwork {
-				if len(mRoutesResult) == 0 {
-					return false, nil
+			senderNodeName := nodeName(mc.senderConfig.nodeIdx)
+			if clusterInfo.nodesOS[senderNodeName] != "windows" {
+				// Sender pods should add an outbound multicast route except when running as HostNetwork.
+				mRoutesResult, err := getMroutes(senderNodeName, gatewayInterface, mc.group.String(), strings.Join(nodeMulticastInterfaces[mc.senderConfig.nodeIdx], " "))
+				if err != nil {
+					return false, err
 				}
-			} else {
-				if len(mRoutesResult) != 0 {
-					return false, nil
+				if !mc.senderConfig.isHostNetwork {
+					if len(mRoutesResult) == 0 {
+						return false, nil
+					}
+				} else {
+					if len(mRoutesResult) != 0 {
+						return false, nil
+					}
 				}
 			}
 			senderReady = true
@@ -666,8 +668,10 @@ func runTestMulticastBetweenPods(t *testing.T, data *TestData, mc multicastTestc
 			if readyReceivers.Has(receiver.nodeIdx) {
 				continue
 			}
-			if checkReceiverRoute {
-				mRoutesResult, err := getMroutes(nodeName(receiver.nodeIdx), transportInterface, mc.group.String())
+			receiverNodeName := nodeName(receiver.nodeIdx)
+			isWindows := clusterInfo.nodesOS[receiverNodeName] == "windows"
+			if checkReceiverRoute && !isWindows {
+				mRoutesResult, err := getMroutes(receiverNodeName, transportInterface, mc.group.String())
 				if err != nil {
 					return false, err
 				}
@@ -684,20 +688,22 @@ func runTestMulticastBetweenPods(t *testing.T, data *TestData, mc multicastTestc
 				}
 			}
 			for _, receiverMulticastInterface := range nodeMulticastInterfaces[receiver.nodeIdx] {
-				mAddrsResult, err := getMaddrs(nodeName(receiver.nodeIdx), receiverMulticastInterface, mc.group.String())
-				if err != nil {
-					return false, err
-				}
-				// The receivers should also join multicast group.
-				// Note that in HostNetwork mode, the "join multicast" action is taken by mcjoin,
-				// which will not persist after mcjoin exits.
-				if !receiver.isHostNetwork {
-					if len(mAddrsResult) == 0 {
-						return false, nil
+				if !isWindows {
+					mAddrsResult, err := getMaddrs(receiverNodeName, receiverMulticastInterface, mc.group.String())
+					if err != nil {
+						return false, err
 					}
-				} else {
-					if len(mAddrsResult) != 0 {
-						return false, nil
+					// The receivers should also join multicast group.
+					// Note that in HostNetwork mode, the "join multicast" action is taken by mcjoin,
+					// which will not persist after mcjoin exits.
+					if !receiver.isHostNetwork {
+						if len(mAddrsResult) == 0 {
+							return false, nil
+						}
+					} else {
+						if len(mAddrsResult) != 0 {
+							return false, nil
+						}
 					}
 				}
 			}

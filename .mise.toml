@@ -1,0 +1,21 @@
+[settings]
+experimental = true
+
+[tools]
+kubectl = "1.34.5"
+argocd = "latest"
+
+[env]
+ARGOCD_OPTS = "--grpc-web"
+AWS_CONFIG_FILE = "{{config_root}}/.aws/config"
+AWS_PROFILE = "bmg-aws-uk-sbx-audiobroadcast"
+AWS_SSO_PROFILE = "BMG"
+KUBECONFIG = "{{config_root}}/kube/config.yaml"
+
+[tasks.aws-login]
+description = "Logs into AWS using SSO. This is required to run any AWS CLI commands or use any tools that rely on AWS credentials."
+run = "bash {{config_root}}/check-aws-sso.sh $AWS_PROFILE $AWS_SSO_PROFILE"
+
+[hooks]
+# This runs when you enter the directory or open it in VS Code
+enter = { task = "aws-login" }

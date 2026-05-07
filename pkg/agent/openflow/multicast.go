@@ -23,6 +23,7 @@ import (
 	"antrea.io/antrea/v2/pkg/agent/openflow/cookie"
 	"antrea.io/antrea/v2/pkg/agent/types"
 	binding "antrea.io/antrea/v2/pkg/ovs/openflow"
+	"antrea.io/antrea/v2/pkg/util/runtime"
 )
 
 type featureMulticast struct {
@@ -35,6 +36,7 @@ type featureMulticast struct {
 	tunnelPort          uint32
 	uplinkPort          uint32
 	hostOFPort          uint32
+	enableHostMulticast bool
 
 	cachedFlows        *flowCategoryCache
 	groupCache         sync.Map
@@ -58,6 +60,7 @@ func newFeatureMulticast(
 	uplinkPort uint32,
 	hostOFPort uint32,
 	flexibleIPAMEnabled bool,
+	enableHostMulticast bool,
 ) *featureMulticast {
 	return &featureMulticast{
 		cookieAllocator:     cookieAllocator,
@@ -73,6 +76,7 @@ func newFeatureMulticast(
 		uplinkPort:          uplinkPort,
 		hostOFPort:          hostOFPort,
 		flexibleIPAMEnabled: flexibleIPAMEnabled,
+		enableHostMulticast: enableHostMulticast,
 	}
 }
 
@@ -90,7 +94,7 @@ func (f *featureMulticast) initFlows() []*openflow15.FlowMod {
 	// Install flows to send the IGMP report messages to Antrea Agent.
 	flows := f.igmpPktInFlows()
 	// Install flow to forward the IGMP query messages to all local Pods.
-	flows = append(flows, f.externalMulticastReceiverFlow())
+	flows = append(flows, f.externalMulticastReceiverFlows()...)
 	// Install flows to forward the multicast traffic to antrea-gw0 if no local Pods have joined in the group, and this
 	// is to ensure local Pods can access the external multicast receivers.
 	flows = append(flows, f.multicastSkipIGMPMetricFlows()...)
@@ -128,6 +132,16 @@ func (f *featureMulticast) multicastReceiversGroup(groupID binding.GroupIDType, 
 	return group
 }
 
+func (f *featureMulticast) multicastInPortSelfDropFlow(port uint32) binding.Flow {
+	return MulticastOutputTable.ofTable.BuildFlow(priorityHigh).
+		Cookie(f.cookieAllocator.Request(f.category).Raw()).
+		MatchInPort(port).
+		MatchRegMark(OutputToOFPortRegMark).
+		MatchRegFieldWithValue(TargetOFPortField, port).
+		Action().Drop().
+		Done()
+}
+
 func (f *featureMulticast) multicastOutputFlows() []binding.Flow {
 	cookieID := f.cookieAllocator.Request(f.category).Raw()
 	flows := []binding.Flow{
@@ -137,6 +151,17 @@ func (f *featureMulticast) multicastOutputFlows() []binding.Flow {
 			Action().OutputToRegField(TargetOFPortField).
 			Done(),
 	}
+	if runtime.IsWindowsPlatform() {
+		// On Windows, the OVS driver may crash if a multicast packet is output to its input port.
+		// We add explicit drops to prevent hairpining for known infrastructure ports.
+		// Dynamic drop rules for Pods are handled in InstallPodFlows.
+		flows = append(flows, f.multicastInPortSelfDropFlow(f.gatewayPort))
+		flows = append(flows, f.multicastInPortSelfDropFlow(f.uplinkPort))
+		if f.tunnelPort != 0 {
+			flows = append(flows, f.multicastInPortSelfDropFlow(f.tunnelPort))
+		}
+	}
+
 	if f.encapEnabled {
 		// When running with encap mode, drop the multicast packets if it is received from tunnel port and expected to
 		// output to antrea-gw0, or received from antrea-gw0 and expected to output to tunnel. These flows are used to
@@ -233,7 +258,7 @@ func (f *featureMulticast) multicastForwardFlexibleIPAMFlows(table binding.Table
 }
 
 func (f *featureMulticast) multicastRemoteReportFlows(groupID binding.GroupIDType, firstMulticastTable binding.Table) []binding.Flow {
-	return []binding.Flow{
+	flows := []binding.Flow{
 		// This flow outputs the IGMP report message sent from Antrea Agent to an OpenFlow group which is expected to
 		// broadcast to all the other Nodes in the cluster. The multicast groups in side the IGMP report message
 		// include the ones local Pods have joined in.
@@ -260,4 +285,17 @@ func (f *featureMulticast) multicastRemoteReportFlows(groupID binding.GroupIDTyp
 			Action().GotoTable(firstMulticastTable.GetID()).
 			Done(),
 	}
+	if runtime.IsWindowsPlatform() {
+		// This flow ensures the multicast packet sent from the external network via the uplink port to enter Multicast
+		// pipeline.
+		flows = append(flows, ClassifierTable.ofTable.BuildFlow(priorityHigh).
+			Cookie(f.cookieAllocator.Request(f.category).Raw()).
+			MatchInPort(f.uplinkPort).
+			MatchProtocol(binding.ProtocolIP).
+			MatchDstIPNet(*types.McastCIDR).
+			Action().LoadRegMark(FromUplinkRegMark, FromExternalRegMark).
+			Action().GotoTable(firstMulticastTable.GetID()).
+			Done())
+	}
+	return flows
 }
