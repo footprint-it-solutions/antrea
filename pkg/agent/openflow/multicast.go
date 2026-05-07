@@ -132,6 +132,16 @@ func (f *featureMulticast) multicastReceiversGroup(groupID binding.GroupIDType, 
 	return group
 }
 
+func (f *featureMulticast) multicastInPortSelfDropFlow(port uint32) binding.Flow {
+	return MulticastOutputTable.ofTable.BuildFlow(priorityHigh).
+		Cookie(f.cookieAllocator.Request(f.category).Raw()).
+		MatchInPort(port).
+		MatchRegMark(OutputToOFPortRegMark).
+		MatchRegFieldWithValue(TargetOFPortField, port).
+		Action().Drop().
+		Done()
+}
+
 func (f *featureMulticast) multicastOutputFlows() []binding.Flow {
 	cookieID := f.cookieAllocator.Request(f.category).Raw()
 	flows := []binding.Flow{
@@ -143,30 +153,13 @@ func (f *featureMulticast) multicastOutputFlows() []binding.Flow {
 	}
 	if runtime.IsWindowsPlatform() {
 		// On Windows, the OVS driver may crash if a multicast packet is output to its input port.
-		// We add explicit drops to prevent hairpining.
-		flows = append(flows,
-			MulticastOutputTable.ofTable.BuildFlow(priorityHigh).
-				Cookie(cookieID).
-				MatchRegMark(FromGatewayRegMark).
-				MatchRegMark(OutputToOFPortRegMark).
-				MatchRegFieldWithValue(TargetOFPortField, f.gatewayPort).
-				Action().Drop().
-				Done(),
-			MulticastOutputTable.ofTable.BuildFlow(priorityHigh).
-				Cookie(cookieID).
-				MatchRegMark(FromUplinkRegMark).
-				MatchRegMark(OutputToOFPortRegMark).
-				MatchRegFieldWithValue(TargetOFPortField, f.uplinkPort).
-				Action().Drop().
-				Done(),
-			MulticastOutputTable.ofTable.BuildFlow(priorityHigh).
-				Cookie(cookieID).
-				MatchRegMark(FromTunnelRegMark).
-				MatchRegMark(OutputToOFPortRegMark).
-				MatchRegFieldWithValue(TargetOFPortField, f.tunnelPort).
-				Action().Drop().
-				Done(),
-		)
+		// We add explicit drops to prevent hairpining for known infrastructure ports.
+		// Dynamic drop rules for Pods are handled in InstallPodFlows.
+		flows = append(flows, f.multicastInPortSelfDropFlow(f.gatewayPort))
+		flows = append(flows, f.multicastInPortSelfDropFlow(f.uplinkPort))
+		if f.tunnelPort != 0 {
+			flows = append(flows, f.multicastInPortSelfDropFlow(f.tunnelPort))
+		}
 	}
 
 	if f.encapEnabled {

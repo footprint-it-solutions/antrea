@@ -34,6 +34,7 @@ import (
 	crdv1alpha2 "antrea.io/antrea/v2/pkg/apis/crd/v1alpha2"
 	binding "antrea.io/antrea/v2/pkg/ovs/openflow"
 	utilip "antrea.io/antrea/v2/pkg/util/ip"
+	"antrea.io/antrea/v2/pkg/util/runtime"
 	"antrea.io/antrea/v2/third_party/proxy"
 )
 
@@ -682,10 +683,25 @@ func (c *client) InstallPodFlows(interfaceName string, podInterfaceIPs []net.IP,
 		return err
 	}
 	// Multicast pod statistics is currently only supported for pods running IPv4 address.
-	if c.enableMulticast && podInterfaceIPv4 != nil {
-		return c.installMulticastPodMetricFlows(interfaceName, podInterfaceIPv4, ofPort)
+	if c.enableMulticast {
+		if podInterfaceIPv4 != nil {
+			if err := c.installMulticastPodMetricFlows(interfaceName, podInterfaceIPv4, ofPort); err != nil {
+				return err
+			}
+		}
+		if runtime.IsWindowsPlatform() {
+			if err := c.installMulticastSafetyFlows(interfaceName, ofPort); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
+}
+
+func (c *client) installMulticastSafetyFlows(interfaceName string, ofPort uint32) error {
+	flows := []binding.Flow{c.featureMulticast.multicastInPortSelfDropFlow(ofPort)}
+	cacheKey := fmt.Sprintf("multicast_safety_%s", interfaceName)
+	return c.addFlows(c.featureMulticast.cachedFlows, cacheKey, flows)
 }
 
 func (c *client) installMulticastPodMetricFlows(interfaceName string, podIP net.IP, ofPort uint32) error {
@@ -703,7 +719,15 @@ func (c *client) UninstallPodFlows(interfaceName string) error {
 	}
 	if c.enableMulticast {
 		cacheKey := fmt.Sprintf("multicast_pod_metric_%s", interfaceName)
-		return c.deleteFlows(c.featureMulticast.cachedFlows, cacheKey)
+		if err := c.deleteFlows(c.featureMulticast.cachedFlows, cacheKey); err != nil {
+			return err
+		}
+		if runtime.IsWindowsPlatform() {
+			cacheKey := fmt.Sprintf("multicast_safety_%s", interfaceName)
+			if err := c.deleteFlows(c.featureMulticast.cachedFlows, cacheKey); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

@@ -465,10 +465,10 @@ func (c *Controller) syncGroup(groupKey string) error {
 	if c.flexibleIPAMEnabled {
 		memberPorts = append(memberPorts, c.nodeConfig.UplinkNetConfig.OFPort, c.nodeConfig.HostInterfaceOFPort)
 	} else if runtime.IsWindowsPlatform() {
-		memberPorts = append(memberPorts, c.nodeConfig.UplinkNetConfig.OFPort)
-		if c.enableHostMulticast {
-			memberPorts = append(memberPorts, c.nodeConfig.GatewayConfig.OFPort)
-		}
+		// On Windows, we handle forwarding to the Gateway and Uplink ports using source-aware
+		// flows in the MulticastRoutingTable instead of including them in the OpenFlow group.
+		// This prevents hairpining (sending a packet back to its input port), which is a
+		// known cause of kernel crashes in the OVS Windows driver (ovsext.sys).
 	} else {
 		memberPorts = append(memberPorts, c.nodeConfig.GatewayConfig.OFPort)
 	}

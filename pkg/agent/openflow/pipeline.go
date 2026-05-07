@@ -2815,6 +2815,40 @@ func (f *featureMulticast) igmpPktInFlows() []binding.Flow {
 // flow, and the packet is not sent back to Antrea gateway because OVS datapath will drop it when it finds the output
 // port is the same as the input port.
 func (f *featureMulticast) localMulticastForwardFlows(multicastIP net.IP, groupID binding.GroupIDType) []binding.Flow {
+	if runtime.IsWindowsPlatform() {
+		// On Windows, use source-aware rules to avoid hairpining, which causes OVS driver crashes.
+		// Packets from Gateway -> Uplink + Group (Pods)
+		// Packets from Uplink -> Gateway + Group (Pods)
+		// Note: Group on Windows now only contains Pod ports.
+		cookie := f.cookieAllocator.Request(f.category).Raw()
+		return []binding.Flow{
+			MulticastRoutingTable.ofTable.BuildFlow(priorityNormal + 10).
+				Cookie(cookie).
+				MatchProtocol(binding.ProtocolIP).
+				MatchDstIP(multicastIP).
+				MatchInPort(f.gatewayPort).
+				Action().Output(f.uplinkPort).
+				Action().Group(groupID).
+				Done(),
+			MulticastRoutingTable.ofTable.BuildFlow(priorityNormal + 10).
+				Cookie(cookie).
+				MatchProtocol(binding.ProtocolIP).
+				MatchDstIP(multicastIP).
+				MatchInPort(f.uplinkPort).
+				Action().Output(f.gatewayPort).
+				Action().Group(groupID).
+				Done(),
+			MulticastRoutingTable.ofTable.BuildFlow(priorityNormal).
+				Cookie(cookie).
+				MatchProtocol(binding.ProtocolIP).
+				MatchDstIP(multicastIP).
+				Action().Output(f.gatewayPort).
+				Action().Output(f.uplinkPort).
+				Action().Group(groupID).
+				Done(),
+		}
+	}
+
 	return []binding.Flow{
 		MulticastRoutingTable.ofTable.BuildFlow(priorityNormal).
 			Cookie(f.cookieAllocator.Request(f.category).Raw()).
