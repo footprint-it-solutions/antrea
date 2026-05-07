@@ -13,7 +13,7 @@ This skill enables an automated "inner loop" for developing and testing Antrea f
 
 1.  **Code Changes**: Perform surgical edits to Antrea source code (e.g., multicast logic in `pkg/agent/openflow/`).
 2.  **Build & Deploy**: Use `scripts/build_push_update.sh` to:
-    *   Commit changes with "Antrea Windows dev update".
+    *   Commit changes to Antrea source and build files (`pkg/`, `cmd/`, `build/`, `hack/`, `Makefile`, `go.mod`, `go.sum`) with "Antrea Windows dev update".
     *   Build and push the image to ECR with a `pr1-<SHA>` tag.
     *   Update the `antrea-agent-windows` DaemonSet manifest.
     *   Apply the manifest to the cluster.

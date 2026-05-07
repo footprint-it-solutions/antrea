@@ -8,9 +8,10 @@ ECR_REPO="346273507914.dkr.ecr.eu-west-2.amazonaws.com/antrea-windows-test"
 REGION="eu-west-2"
 
 # 1. Commit changes if any
-if [[ -n $(git status -s) ]]; then
-  echo "===> Committing changes..."
-  git add .
+SOURCE_PATHS="pkg/ cmd/ build/ hack/ Makefile go.mod go.sum"
+if [[ -n $(git status -s $SOURCE_PATHS) ]]; then
+  echo "===> Committing Antrea source changes..."
+  git add $SOURCE_PATHS
   git commit -m "Antrea Windows dev update" || true
 fi
 
