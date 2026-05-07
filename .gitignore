@@ -24,4 +24,6 @@ vendor
 ci/jenkins/jobs/defaults.yml
 
 .aws/
-
+.gemini/plans
+kube/
+antrea-windows-dev.skill
