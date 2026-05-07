@@ -23,6 +23,7 @@ import (
 	"antrea.io/antrea/v2/pkg/agent/openflow/cookie"
 	"antrea.io/antrea/v2/pkg/agent/types"
 	binding "antrea.io/antrea/v2/pkg/ovs/openflow"
+	"antrea.io/antrea/v2/pkg/util/runtime"
 )
 
 type featureMulticast struct {
@@ -93,7 +94,7 @@ func (f *featureMulticast) initFlows() []*openflow15.FlowMod {
 	// Install flows to send the IGMP report messages to Antrea Agent.
 	flows := f.igmpPktInFlows()
 	// Install flow to forward the IGMP query messages to all local Pods.
-	flows = append(flows, f.externalMulticastReceiverFlow())
+	flows = append(flows, f.externalMulticastReceiverFlows()...)
 	// Install flows to forward the multicast traffic to antrea-gw0 if no local Pods have joined in the group, and this
 	// is to ensure local Pods can access the external multicast receivers.
 	flows = append(flows, f.multicastSkipIGMPMetricFlows()...)
@@ -140,6 +141,34 @@ func (f *featureMulticast) multicastOutputFlows() []binding.Flow {
 			Action().OutputToRegField(TargetOFPortField).
 			Done(),
 	}
+	if runtime.IsWindowsPlatform() {
+		// On Windows, the OVS driver may crash if a multicast packet is output to its input port.
+		// We add explicit drops to prevent hairpining.
+		flows = append(flows,
+			MulticastOutputTable.ofTable.BuildFlow(priorityHigh).
+				Cookie(cookieID).
+				MatchRegMark(FromGatewayRegMark).
+				MatchRegMark(OutputToOFPortRegMark).
+				MatchRegFieldWithValue(TargetOFPortField, f.gatewayPort).
+				Action().Drop().
+				Done(),
+			MulticastOutputTable.ofTable.BuildFlow(priorityHigh).
+				Cookie(cookieID).
+				MatchRegMark(FromUplinkRegMark).
+				MatchRegMark(OutputToOFPortRegMark).
+				MatchRegFieldWithValue(TargetOFPortField, f.uplinkPort).
+				Action().Drop().
+				Done(),
+			MulticastOutputTable.ofTable.BuildFlow(priorityHigh).
+				Cookie(cookieID).
+				MatchRegMark(FromTunnelRegMark).
+				MatchRegMark(OutputToOFPortRegMark).
+				MatchRegFieldWithValue(TargetOFPortField, f.tunnelPort).
+				Action().Drop().
+				Done(),
+		)
+	}
+
 	if f.encapEnabled {
 		// When running with encap mode, drop the multicast packets if it is received from tunnel port and expected to
 		// output to antrea-gw0, or received from antrea-gw0 and expected to output to tunnel. These flows are used to
@@ -236,7 +265,7 @@ func (f *featureMulticast) multicastForwardFlexibleIPAMFlows(table binding.Table
 }
 
 func (f *featureMulticast) multicastRemoteReportFlows(groupID binding.GroupIDType, firstMulticastTable binding.Table) []binding.Flow {
-	return []binding.Flow{
+	flows := []binding.Flow{
 		// This flow outputs the IGMP report message sent from Antrea Agent to an OpenFlow group which is expected to
 		// broadcast to all the other Nodes in the cluster. The multicast groups in side the IGMP report message
 		// include the ones local Pods have joined in.
@@ -263,4 +292,17 @@ func (f *featureMulticast) multicastRemoteReportFlows(groupID binding.GroupIDTyp
 			Action().GotoTable(firstMulticastTable.GetID()).
 			Done(),
 	}
+	if runtime.IsWindowsPlatform() {
+		// This flow ensures the multicast packet sent from the external network via the uplink port to enter Multicast
+		// pipeline.
+		flows = append(flows, ClassifierTable.ofTable.BuildFlow(priorityHigh).
+			Cookie(f.cookieAllocator.Request(f.category).Raw()).
+			MatchInPort(f.uplinkPort).
+			MatchProtocol(binding.ProtocolIP).
+			MatchDstIPNet(*types.McastCIDR).
+			Action().LoadRegMark(FromUplinkRegMark, FromExternalRegMark).
+			Action().GotoTable(firstMulticastTable.GetID()).
+			Done())
+	}
+	return flows
 }

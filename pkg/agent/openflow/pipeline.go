@@ -2831,14 +2831,34 @@ func (f *featureMulticast) localMulticastForwardFlows(multicastIP net.IP, groupI
 // function "localMulticastForwardFlows" after local Pods report the IGMP membership.
 // Because there are ingress tables between MulticastRoutingTable and MulticastOutputTable, while currently ingress rules only
 // support IGMP query, it is not necessary to goto the ingress tables for other multicast traffic.
-func (f *featureMulticast) externalMulticastReceiverFlow() binding.Flow {
+func (f *featureMulticast) externalMulticastReceiverFlows() []binding.Flow {
+	if runtime.IsWindowsPlatform() {
+		// On Windows, use source-aware rules to prevent hairpining, which can cause driver crashes.
+		return []binding.Flow{
+			MulticastRoutingTable.ofTable.BuildFlow(priorityLow).
+				Cookie(f.cookieAllocator.Request(f.category).Raw()).
+				MatchInPort(f.gatewayPort).
+				MatchProtocol(binding.ProtocolIP).
+				Action().Output(f.uplinkPort).
+				Done(),
+			MulticastRoutingTable.ofTable.BuildFlow(priorityLow).
+				Cookie(f.cookieAllocator.Request(f.category).Raw()).
+				MatchInPort(f.uplinkPort).
+				MatchProtocol(binding.ProtocolIP).
+				Action().Output(f.gatewayPort).
+				Done(),
+			MulticastRoutingTable.ofTable.BuildFlow(priorityLow).
+				Cookie(f.cookieAllocator.Request(f.category).Raw()).
+				MatchInPort(f.tunnelPort).
+				MatchProtocol(binding.ProtocolIP).
+				Action().Output(f.gatewayPort).
+				Done(),
+		}
+	}
+
 	outputPorts := []uint32{f.gatewayPort}
 	if f.flexibleIPAMEnabled {
 		outputPorts = []uint32{f.hostOFPort, f.uplinkPort}
-	} else if runtime.IsWindowsPlatform() {
-		// On Windows, always include the uplink port to ensure host-originated
-		// multicast (e.g., discovery) reaches the external network.
-		outputPorts = append(outputPorts, f.uplinkPort)
 	}
 	flow := MulticastRoutingTable.ofTable.BuildFlow(priorityLow).
 		Cookie(f.cookieAllocator.Request(f.category).Raw()).
@@ -2846,7 +2866,7 @@ func (f *featureMulticast) externalMulticastReceiverFlow() binding.Flow {
 	for _, outputPort := range outputPorts {
 		flow = flow.Action().Output(outputPort)
 	}
-	return flow.Done()
+	return []binding.Flow{flow.Done()}
 }
 
 // NewClient is the constructor of the Client interface.
